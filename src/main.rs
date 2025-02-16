@@ -1,3 +1,4 @@
+use crate::GameState::{GameOver, InGame};
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
@@ -36,6 +37,12 @@ struct Health(usize);
 
 #[derive(Component)]
 struct HealthInfo;
+
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
+enum GameState {
+    InGame,
+    GameOver,
+}
 //endregion
 
 fn main() {
@@ -43,22 +50,27 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(EntropyPlugin::<WyRand>::default())
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                jump,
-                apply_gravity,
-                player_movement,
-                spawn_obstacles,
-                move_obstacles,
-                detect_collision,
-                render_health_info,
-            ),
-        )
         .insert_resource(ObstacleSpawningTimer(Timer::from_seconds(
             SPAWN_INTERVAL,
             TimerMode::Repeating,
         )))
+        .insert_state(InGame)
+        .add_systems(
+            Update,
+            (jump, apply_gravity, player_movement).run_if(in_state(InGame)),
+        )
+        .add_systems(
+            Update,
+            (
+                spawn_obstacles,
+                move_obstacles,
+                detect_collision,
+                render_health_info,
+                check_health,
+            )
+                .run_if(in_state(InGame)),
+        )
+        .add_systems(OnEnter(GameOver), game_over)
         .run();
 }
 
@@ -194,4 +206,36 @@ fn render_health_info(
             health_info.0 = format!("Health: {}", health.0);
         }
     }
+}
+
+fn check_health(
+    player_query: Query<&Health, With<Player>>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
+    if let Ok(Health(health)) = player_query.get_single() {
+        if *health == 0 {
+            game_state.set(GameOver);
+        }
+    }
+}
+
+fn game_over(mut commands: Commands) {
+    commands
+        .spawn((Node {
+            position_type: PositionType::Absolute,
+            left: Val::Percent(10.),
+            right: Val::Percent(10.),
+            top: Val::Percent(15.),
+            bottom: Val::Percent(15.),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },))
+        .with_children(|builder| {
+            builder.spawn((
+                Text("GAME OVER".to_string()),
+                TextFont::from_font_size(160.0),
+                TextLayout::new_with_justify(JustifyText::Center).with_no_wrap(),
+                TextColor(Color::srgb(1.0, 0.0, 0.0)),
+            ));
+        });
 }
