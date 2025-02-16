@@ -30,11 +30,42 @@ struct Obstacle;
 
 #[derive(Component)]
 struct Velocity(Vec3);
+
+#[derive(Component)]
+struct Health(usize);
+
+#[derive(Component)]
+struct HealthInfo;
 //endregion
+
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins)
+        .add_plugins(EntropyPlugin::<WyRand>::default())
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                jump,
+                apply_gravity,
+                player_movement,
+                spawn_obstacles,
+                move_obstacles,
+                detect_collision,
+                render_health_info,
+            ),
+        )
+        .insert_resource(ObstacleSpawningTimer(Timer::from_seconds(
+            SPAWN_INTERVAL,
+            TimerMode::Repeating,
+        )))
+        .run();
+}
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
 
+    let initial_health = 3;
     // Player
     commands.spawn((
         Player,
@@ -46,7 +77,10 @@ fn setup(mut commands: Commands) {
         },
         Transform::from_xyz(PLAYER_X, GROUND_LEVEL, 0.0),
         Velocity(Vec3::ZERO),
+        Health(initial_health),
     ));
+
+    commands.spawn((HealthInfo, Text::new(format!("Health: {}", initial_health))));
 
     // Ground
     commands.spawn((
@@ -132,25 +166,32 @@ fn move_obstacles(
         }
     }
 }
+fn detect_collision(
+    mut commands: Commands,
+    mut player_query: Query<(&Transform, &mut Health), With<Player>>,
+    obstacle_query: Query<(Entity, &Transform), With<Obstacle>>,
+) {
+    if let Ok((player_transform, mut health)) = player_query.get_single_mut() {
+        for (entity, obstacle_transform) in obstacle_query.iter() {
+            let collision = player_transform
+                .translation
+                .distance(obstacle_transform.translation)
+                < 50.0;
+            if collision {
+                health.0 -= 1;
+                commands.entity(entity).despawn(); // Remove obstacle
+            }
+        }
+    }
+}
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(EntropyPlugin::<WyRand>::default())
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                jump,
-                apply_gravity,
-                player_movement,
-                spawn_obstacles,
-                move_obstacles,
-            ),
-        )
-        .insert_resource(ObstacleSpawningTimer(Timer::from_seconds(
-            SPAWN_INTERVAL,
-            TimerMode::Repeating,
-        )))
-        .run();
+fn render_health_info(
+    player_query: Query<&mut Health, With<Player>>,
+    mut health_info_query: Query<&mut Text, With<HealthInfo>>,
+) {
+    if let Ok(mut health_info) = health_info_query.get_single_mut() {
+        if let Ok(health) = player_query.get_single() {
+            health_info.0 = format!("Health: {}", health.0);
+        }
+    }
 }
