@@ -20,6 +20,8 @@ const GROUND_EDGE: f32 = GROUND_SIZE.x / 2.0;
 const GROUND_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
 const OBSTACLE_SIZE: Vec2 = Vec2::new(30.0, 30.0);
 const OBSTACLE_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
+const HEALTH_INFO_POSITION: (Val, Val) = (Val::Px(5.0), Val::Px(5.0));
+const POINTS_INFO_POSITION: (Val, Val) = (Val::Px(30.0), Val::Px(5.0));
 //endregion
 
 //region Components, resources, and states
@@ -46,6 +48,12 @@ enum GameState {
     InGame,
     GameOver,
 }
+
+#[derive(Component)]
+struct Points(usize);
+
+#[derive(Component)]
+struct PointsInfo;
 //endregion
 
 fn main() {
@@ -70,6 +78,8 @@ fn main() {
                 detect_collision,
                 render_health_info,
                 check_health,
+                render_points_info,
+                update_points,
             )
                 .run_if(in_state(InGame)),
         )
@@ -81,6 +91,8 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
 
     let initial_health = 3;
+    let initial_points = 0;
+
     // Player
     commands.spawn((
         Player,
@@ -93,9 +105,32 @@ fn setup(mut commands: Commands) {
         Transform::from_xyz(PLAYER_X, GROUND_LEVEL, 0.0),
         Velocity(Vec3::ZERO),
         Health(initial_health),
+        Points(initial_points),
     ));
 
-    commands.spawn((HealthInfo, Text::new(format!("Health: {}", initial_health))));
+    // Health
+    commands.spawn((
+        HealthInfo,
+        Text::new(format!("Health: {}", initial_health)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: HEALTH_INFO_POSITION.0,
+            left: HEALTH_INFO_POSITION.1,
+            ..default()
+        },
+    ));
+
+    // Points
+    commands.spawn((
+        PointsInfo,
+        Text::new(format!("Points: {}", initial_points)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: POINTS_INFO_POSITION.0,
+            left: POINTS_INFO_POSITION.1,
+            ..default()
+        },
+    ));
 
     // Ground
     commands.spawn((
@@ -168,18 +203,9 @@ fn spawn_obstacles(
     }
 }
 
-fn move_obstacles(
-    time: Res<Time>,
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut Transform), With<Obstacle>>,
-) {
-    for (entity, mut transform) in query.iter_mut() {
+fn move_obstacles(time: Res<Time>, mut query: Query<&mut Transform, With<Obstacle>>) {
+    for mut transform in query.iter_mut() {
         transform.translation.x -= GAME_SPEED * time.delta_secs();
-
-        // Remove obstacles once they're off-screen
-        if transform.translation.x < -GROUND_EDGE {
-            commands.entity(entity).despawn();
-        }
     }
 }
 
@@ -241,6 +267,34 @@ fn render_health_info(
     if let Ok(mut health_info) = health_info_query.get_single_mut() {
         if let Ok(health) = player_query.get_single() {
             health_info.0 = format!("Health: {}", health.0);
+        }
+    }
+}
+
+fn render_points_info(
+    player_query: Query<&mut Points, With<Player>>,
+    mut points_info_query: Query<&mut Text, With<PointsInfo>>,
+) {
+    if let Ok(mut points_info) = points_info_query.get_single_mut() {
+        if let Ok(points) = player_query.get_single() {
+            points_info.0 = format!("Points: {}", points.0);
+        }
+    }
+}
+
+fn update_points(
+    mut commands: Commands,
+    mut player_query: Query<(&Transform, &mut Points), With<Player>>,
+    obstacle_query: Query<(Entity, &Transform), With<Obstacle>>,
+) {
+    if let Ok((player_transform, mut points)) = player_query.get_single_mut() {
+        for (entity, obstacle_transform) in obstacle_query.iter() {
+            let win = player_transform.translation.x
+                > (obstacle_transform.translation.x + OBSTACLE_SIZE.x);
+            if win {
+                points.0 += 1;
+                commands.entity(entity).despawn(); // Remove obstacle
+            }
         }
     }
 }
