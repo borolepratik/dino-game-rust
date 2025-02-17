@@ -22,6 +22,8 @@ const OBSTACLE_SIZE: Vec2 = Vec2::new(30.0, 30.0);
 const OBSTACLE_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
 const HEALTH_INFO_POSITION: (Val, Val) = (Val::Px(5.0), Val::Px(5.0));
 const POINTS_INFO_POSITION: (Val, Val) = (Val::Px(30.0), Val::Px(5.0));
+const INITIAL_HEALTH: usize = 3;
+const INITIAL_POINTS: usize = 0;
 //endregion
 
 //region Components, resources, and states
@@ -40,6 +42,15 @@ struct Health(usize);
 #[derive(Component)]
 struct HealthInfo;
 
+#[derive(Component)]
+struct Points(usize);
+
+#[derive(Component)]
+struct PointsInfo;
+
+#[derive(Component)]
+struct GameOverText;
+
 #[derive(Resource)]
 struct ObstacleSpawningTimer(Timer);
 
@@ -48,12 +59,6 @@ enum GameState {
     InGame,
     GameOver,
 }
-
-#[derive(Component)]
-struct Points(usize);
-
-#[derive(Component)]
-struct PointsInfo;
 //endregion
 
 fn main() {
@@ -84,14 +89,15 @@ fn main() {
                 .run_if(in_state(InGame)),
         )
         .add_systems(OnEnter(GameOver), game_over)
+        .add_systems(Update, restart_game.run_if(in_state(GameOver)))
         .run();
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d::default());
 
-    let initial_health = 3;
-    let initial_points = 0;
+    let initial_health = INITIAL_HEALTH;
+    let initial_points = INITIAL_POINTS;
 
     // Player
     commands.spawn((
@@ -256,6 +262,19 @@ fn game_over(mut commands: Commands) {
                 TextFont::from_font_size(160.0),
                 TextLayout::new_with_justify(JustifyText::Center).with_no_wrap(),
                 TextColor(Color::srgb(1.0, 0.0, 0.0)),
+                GameOverText,
+            ));
+            builder.spawn((
+                Button,
+                Node {
+                    position_type: PositionType::Absolute,
+                    bottom: Val::Px(20.0),
+                    ..default()
+                },
+                Text("Restart".to_string()),
+                TextFont::from_font_size(40.0),
+                TextLayout::new_with_justify(JustifyText::Center).with_no_wrap(),
+                TextColor(Color::srgb(0.0, 1.0, 0.0)),
             ));
         });
 }
@@ -295,6 +314,51 @@ fn update_points(
                 points.0 += 1;
                 commands.entity(entity).despawn(); // Remove obstacle
             }
+        }
+    }
+}
+
+fn restart_game(
+    mut commands: Commands,
+    button_query: Query<&Interaction, (Changed<Interaction>, With<Button>)>,
+    mut game_state: ResMut<NextState<GameState>>,
+    mut player_query: Query<(&mut Transform, &mut Health, &mut Points), With<Player>>,
+    obstacle_query: Query<Entity, With<Obstacle>>,
+    game_over_text_query: Query<Entity, With<GameOverText>>,
+    restart_button_query: Query<Entity, With<Button>>,
+) {
+    for interaction in button_query.iter() {
+        if *interaction == Interaction::Pressed {
+            // Reset game state
+            game_state.set(InGame);
+
+            // Reset player state
+            if let Ok((mut transform, mut health, mut points)) = player_query.get_single_mut() {
+                transform.translation = Vec3::new(PLAYER_X, GROUND_LEVEL, 0.0);
+                health.0 = INITIAL_HEALTH; // Reset health to initial value
+                points.0 = INITIAL_POINTS; // Reset points to initial value
+            }
+
+            // De-spawn all obstacles
+            for entity in obstacle_query.iter() {
+                commands.entity(entity).despawn();
+            }
+
+            // De-spawn game over text
+            for entity in game_over_text_query.iter() {
+                commands.entity(entity).despawn();
+            }
+
+            // De-spawn restart button
+            for entity in restart_button_query.iter() {
+                commands.entity(entity).despawn();
+            }
+
+            // Reset obstacle spawning timer
+            commands.insert_resource(ObstacleSpawningTimer(Timer::from_seconds(
+                SPAWN_INTERVAL,
+                TimerMode::Repeating,
+            )));
         }
     }
 }
