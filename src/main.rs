@@ -11,32 +11,35 @@ const GAME_SPEED: f32 = 400.0;
 const JUMP_FORCE: f32 = 600.0;
 const GRAVITY: f32 = -1500.0;
 const PLAYER_X: f32 = -300.0;
+const PLAYER_SIZE: Vec2 = Vec2::new(30.0, 50.0);
+const PLAYER_COLOR: Color = Color::srgb(0.5, 1.0, 0.5);
 const SPAWN_INTERVAL: f32 = 1.0;
 const GROUND_LEVEL: f32 = -100.0;
 const GROUND_SIZE: Vec2 = Vec2::new(800.0, 10.0);
 const GROUND_EDGE: f32 = GROUND_SIZE.x / 2.0;
+const GROUND_COLOR: Color = Color::srgb(0.5, 0.5, 0.5);
 const OBSTACLE_SIZE: Vec2 = Vec2::new(30.0, 30.0);
 const OBSTACLE_COLOR: Color = Color::srgb(1.0, 0.0, 0.0);
 //endregion
 
 //region Components, resources, and states
-#[derive(Resource)]
-struct ObstacleSpawningTimer(Timer);
-
 #[derive(Component)]
 struct Player;
 
 #[derive(Component)]
-struct Obstacle;
+struct Velocity(Vec3);
 
 #[derive(Component)]
-struct Velocity(Vec3);
+struct Obstacle;
 
 #[derive(Component)]
 struct Health(usize);
 
 #[derive(Component)]
 struct HealthInfo;
+
+#[derive(Resource)]
+struct ObstacleSpawningTimer(Timer);
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
 enum GameState {
@@ -82,8 +85,8 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Player,
         Sprite {
-            color: Color::srgb(0.5, 1.0, 0.5),
-            custom_size: Some(Vec2::new(30.0, 50.0)),
+            color: PLAYER_COLOR,
+            custom_size: Some(PLAYER_SIZE),
             anchor: Anchor::BottomCenter,
             ..default()
         },
@@ -97,12 +100,12 @@ fn setup(mut commands: Commands) {
     // Ground
     commands.spawn((
         Sprite {
-            color: Color::srgb(0.5, 0.5, 0.5),
+            color: GROUND_COLOR,
             custom_size: Some(GROUND_SIZE),
             anchor: Anchor::TopLeft,
             ..default()
         },
-        Transform::from_xyz(-400.0, GROUND_LEVEL, 0.0),
+        Transform::from_xyz(-GROUND_EDGE, GROUND_LEVEL, 0.0),
     ));
 }
 
@@ -128,6 +131,7 @@ fn player_movement(
 ) {
     for (mut transform, mut velocity) in query.iter_mut() {
         transform.translation.y += velocity.0.y * time.delta_secs();
+
         if transform.translation.y <= GROUND_LEVEL {
             transform.translation.y = GROUND_LEVEL;
             velocity.0.y = 0.0;
@@ -178,6 +182,7 @@ fn move_obstacles(
         }
     }
 }
+
 fn detect_collision(
     mut commands: Commands,
     mut player_query: Query<(&Transform, &mut Health), With<Player>>,
@@ -193,17 +198,6 @@ fn detect_collision(
                 health.0 -= 1;
                 commands.entity(entity).despawn(); // Remove obstacle
             }
-        }
-    }
-}
-
-fn render_health_info(
-    player_query: Query<&mut Health, With<Player>>,
-    mut health_info_query: Query<&mut Text, With<HealthInfo>>,
-) {
-    if let Ok(mut health_info) = health_info_query.get_single_mut() {
-        if let Ok(health) = player_query.get_single() {
-            health_info.0 = format!("Health: {}", health.0);
         }
     }
 }
@@ -238,4 +232,15 @@ fn game_over(mut commands: Commands) {
                 TextColor(Color::srgb(1.0, 0.0, 0.0)),
             ));
         });
+}
+
+fn render_health_info(
+    player_query: Query<&mut Health, With<Player>>,
+    mut health_info_query: Query<&mut Text, With<HealthInfo>>,
+) {
+    if let Ok(mut health_info) = health_info_query.get_single_mut() {
+        if let Ok(health) = player_query.get_single() {
+            health_info.0 = format!("Health: {}", health.0);
+        }
+    }
 }
